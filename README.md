@@ -1,4 +1,4 @@
-# Eepsy 🌙
+# Eepsy 🐧🌙
 
 A Bluetooth sleep timer for Android that automatically disconnects Bluetooth audio after a user-defined duration, helping you fall asleep without draining your device or headphones.
 
