@@ -1,0 +1,22 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.BluetoothEepTimer" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/eepsy_dark_background</item>
+        <item name="android:statusBarColor">@color/eepsy_dark_background</item>
+        <item name="colorPrimary">@color/eepsy_dark_primary</item>
+        <item name="colorPrimaryDark">@color/eepsy_dark_primary_dark</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/eepsy_dark_accent</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <item name="colorSecondaryContainer">@color/eepsy_dark_track</item>
+        <item name="colorSurface">@color/eepsy_dark_background</item>
+        <item name="colorSurfaceContainer">@color/eepsy_dark_card</item>
+        <item name="colorOnSurface">@color/eepsy_dark_text</item>
+        <item name="colorOnSurfaceVariant">@color/eepsy_dark_text_muted</item>
+        <item name="colorOutlineVariant">@color/eepsy_dark_outline</item>
+        <item name="materialButtonStyle">@style/Widget.Material3.Button</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+    </style>
+</resources>

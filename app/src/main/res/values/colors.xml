@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+
+    <color name="eepsy_light_background">#F8FAFC</color>
+    <color name="eepsy_light_card">#FFFFFFFF</color>
+    <color name="eepsy_light_text">#111827</color>
+    <color name="eepsy_light_text_muted">#475569</color>
+    <color name="eepsy_light_primary">#6D5EF5</color>
+    <color name="eepsy_light_primary_dark">#5B21B6</color>
+    <color name="eepsy_light_accent">#A78BFA</color>
+    <color name="eepsy_light_outline">#E2E8F0</color>
+    <color name="eepsy_light_track">#DDD6FE</color>
+
+    <color name="eepsy_dark_background">#0F172A</color>
+    <color name="eepsy_dark_card">#1E293B</color>
+    <color name="eepsy_dark_text">#FFFFFF</color>
+    <color name="eepsy_dark_text_muted">#CBD5E1</color>
+    <color name="eepsy_dark_primary">#7C3AED</color>
+    <color name="eepsy_dark_primary_dark">#5B21B6</color>
+    <color name="eepsy_dark_accent">#A78BFA</color>
+    <color name="eepsy_dark_outline">#334155</color>
+    <color name="eepsy_dark_track">#312E81</color>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Lift while pressed -->
+
+    <item android:state_pressed="true">
+
+        <objectAnimator
+            android:propertyName="translationZ"
+            android:duration="180"
+            android:valueTo="12dp"
+            android:valueType="floatType"/>
+
+    </item>
+
+    <!-- Normal elevation -->
+
+    <item>
+
+        <objectAnimator
+            android:propertyName="translationZ"
+            android:duration="180"
+            android:valueTo="0dp"
+            android:valueType="floatType"/>
+
+    </item>
+
+</selector>
