@@ -6,10 +6,9 @@
 </p>
 
 <p align="center">
-  <img src="https://via.placeholder.com/300x500.png?text=App+Screenshot+1" width="200" />
-  <img src="https://via.placeholder.com/300x500.png?text=App+Screenshot+2" width="200" />
+  <img src="https://github.com/beansonli/eepsy/blob/main/eepsy_app_view1.png?raw=true" width="200" />
+  <img src="https://github.com/beansonli/eepsy/blob/main/eepsy_app_view2.jpeg?raw=true" width="200" />
 </p>
-
 ---
 
 ## 📖 Table of Contents
