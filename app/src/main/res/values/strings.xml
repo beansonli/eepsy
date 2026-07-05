@@ -1,9 +1,9 @@
 <resources>
     <string name="app_name">Bluetooth Eep Timer</string>
-    <string name="app_name_short">Eepsy</string>
+    <string name="app_name_short">eepsyᶻ 𝗓 𐰁 .ᐟ</string>
     <string name="app_tagline">Disconnect peacefully.</string>
     <string name="bluetooth_symbol">ᛒ</string>
-    <string name="sleep_timer_title">Bluetooth Sleep Timer</string>
+    <string name="sleep_timer_title">Sleep Timer</string>
     <string name="status_ready">Status: Ready</string>
     <string name="enter_duration">ENTER DURATION</string>
     <string name="hour_label">Hour</string>

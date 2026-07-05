@@ -6,7 +6,12 @@ import android.content.*;
 import android.media.AudioManager;
 import android.os.*;
 import android.util.Log;
+import android.view.KeyEvent;
+
+import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+
 import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.Set;
@@ -19,6 +24,23 @@ public class SleepTimerService extends Service {
     private static final int NOTIFICATION_ID = 1;
     private static final long BLOCK_DURATION_MS = 30 * 60 * 1000;
 
+    /** Callback so a bound UI (Activity) can reflect the single source of truth for the timer. */
+    public interface TimerCallback {
+        void onTick(int remainingSeconds, int totalDurationSeconds);
+        void onCompleted();
+    }
+
+    /** Local binder - this service always runs in-process, so a plain object reference is fine. */
+    public class LocalBinder extends Binder {
+        SleepTimerService getService() {
+            return SleepTimerService.this;
+        }
+    }
+
+    private final IBinder binder = new LocalBinder();
+    @Nullable
+    private TimerCallback callback;
+
     private BluetoothAdapter bluetoothAdapter;
     private AudioManager audioManager;
     private PowerManager.WakeLock wakeLock;
@@ -26,6 +48,9 @@ public class SleepTimerService extends Service {
 
     private boolean timerRunning = false;
     private int remainingSeconds = 0;
+    private int totalDurationSeconds = 0;
+    @Nullable
+    private String activePresetId = null;
     private final Set<String> blockedDevices = new HashSet<>();
 
     // Event Watchdog
@@ -71,14 +96,44 @@ public class SleepTimerService extends Service {
         if (mac != null)
             getSharedPreferences(PREFS_NAME, 0).edit().putString(KEY_TARGET_MAC, mac).apply();
 
+        activePresetId = intent.getStringExtra("preset_id");
+
         startTimer(intent.getIntExtra("duration_seconds", 0));
         return START_STICKY;
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return binder;
+    }
+
+    // ---- State accessors used by a (re)bound Activity, e.g. after a theme/config change ----
+    public boolean isTimerRunning() {
+        return timerRunning;
+    }
+
+    public int getRemainingSeconds() {
+        return remainingSeconds;
+    }
+
+    public int getTotalDurationSeconds() {
+        return totalDurationSeconds;
+    }
+
+    @Nullable
+    public String getActivePresetId() {
+        return activePresetId;
+    }
+
+    public void setTimerCallback(@Nullable TimerCallback callback) {
+        this.callback = callback;
     }
 
     // Core Timer Logic
     private void startTimer(int duration) {
         if (duration <= 0) return;
         remainingSeconds = duration;
+        totalDurationSeconds = duration;
         timerRunning = true;
         wakeLock.acquire(BLOCK_DURATION_MS);
         tickHandler.post(tickRunnable);
@@ -93,6 +148,7 @@ public class SleepTimerService extends Service {
                 initiateShutdown();
             } else {
                 updateNotification(remainingSeconds);
+                if (callback != null) callback.onTick(remainingSeconds, totalDurationSeconds);
                 tickHandler.postDelayed(this, 1000);
             }
         }
@@ -101,6 +157,7 @@ public class SleepTimerService extends Service {
     // Shutdown Sequence with Fade-out
     private void initiateShutdown() {
         timerRunning = false;
+        if (callback != null) callback.onCompleted();
         Log.i(TAG, "Starting volume fade-out...");
         fadeVolume(5); // Start at volume step 5
     }
@@ -120,6 +177,17 @@ public class SleepTimerService extends Service {
     }
 
     private void performFinalDisconnect() {
+        // The timer has genuinely finished: pull down the "Timer Running" notification and drop
+        // out of the foreground state immediately instead of waiting for the reconnect-blocker
+        // window to close. Leaving the ongoing notification up made it look like the timer was
+        // still running on several OEM builds.
+        stopForeground(Service.STOP_FOREGROUND_REMOVE);
+        NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
+
+        // Best-effort: ask whatever app currently holds audio focus to pause, so media doesn't
+        // keep playing through the phone speaker after the Bluetooth device disconnects.
+        pauseActiveMedia();
+
         String targetMac = getSharedPreferences(PREFS_NAME, 0).getString(KEY_TARGET_MAC, "");
         boolean hasTarget = targetMac != null && !targetMac.isEmpty();
 
@@ -154,6 +222,25 @@ public class SleepTimerService extends Service {
         tickHandler.postDelayed(this::stopTimer, BLOCK_DURATION_MS);
     }
 
+    /**
+     * Sends a synthetic media-button pause event through AudioManager. This reaches whichever
+     * app currently holds an active MediaSession (Netflix, YouTube, Spotify, Apple Music,
+     * Prime Video, VLC, etc.) without requiring notification-listener access, since it rides on
+     * the same mechanism used by real Bluetooth headset buttons.
+     */
+    private void pauseActiveMedia() {
+        try {
+            long eventTime = SystemClock.uptimeMillis();
+            KeyEvent down = new KeyEvent(eventTime, eventTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE, 0);
+            KeyEvent up = new KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE, 0);
+            audioManager.dispatchMediaKeyEvent(down);
+            audioManager.dispatchMediaKeyEvent(up);
+            Log.i(TAG, "Dispatched media pause command");
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to dispatch media pause command", e);
+        }
+    }
+
     private void disconnectDevice(BluetoothProfile proxy, BluetoothDevice device) {
         try {
             Method m = proxy.getClass().getMethod("disconnect", BluetoothDevice.class);
@@ -176,19 +263,24 @@ public class SleepTimerService extends Service {
             Log.e(TAG, "Watchdog disconnect failed", e);
         }
     }
+
     private void stopTimer() {
         try {
             unregisterReceiver(reconnectBlocker);
         } catch (Exception ignored) {
         }
         if (wakeLock.isHeld()) wakeLock.release();
-        stopForeground(true);
+        timerRunning = false;
+        activePresetId = null;
+        stopForeground(Service.STOP_FOREGROUND_REMOVE);
+        NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
         stopSelf();
     }
 
     @Override
     public void onDestroy() {
         tickHandler.removeCallbacks(tickRunnable);
+        callback = null;
         super.onDestroy();
     }
 
@@ -203,15 +295,12 @@ public class SleepTimerService extends Service {
                 new Intent(this, SleepTimerService.class).setAction("STOP"), PendingIntent.FLAG_IMMUTABLE);
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("Timer Running").setContentText(String.format("%02d:%02d", s / 60, s % 60))
-                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm).addAction(0, "Cancel", stopIntent).build();
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm).addAction(0, "Cancel", stopIntent)
+                .setOngoing(true)
+                .build();
     }
 
     private void updateNotification(int s) {
         getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, buildNotification(s));
-    }
-
-    @Override
-    public IBinder onBind(Intent i) {
-        return null;
     }
 }

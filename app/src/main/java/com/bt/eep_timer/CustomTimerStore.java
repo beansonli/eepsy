@@ -68,9 +68,9 @@ class CustomTimerStore {
     private List<CustomTimer> defaultTimers() {
         List<CustomTimer> defaults = new ArrayList<>();
         long now = System.currentTimeMillis();
-        defaults.add(new CustomTimer(newId(), "", 0, 25, now, false));
-        defaults.add(new CustomTimer(newId(), "", 0, 45, now + 1, false));
-        defaults.add(new CustomTimer(newId(), "", 1, 0, now + 2, false));
+        defaults.add(new CustomTimer(newId(), "Power Nap", 0, 25, now, false));
+        defaults.add(new CustomTimer(newId(), "Book Reading", 0, 45, now + 1, false));
+        defaults.add(new CustomTimer(newId(), "Podcast", 1, 0, now + 2, false));
         return defaults;
     }
 

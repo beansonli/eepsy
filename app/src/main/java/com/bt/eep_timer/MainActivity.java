@@ -1,15 +1,18 @@
 package com.bt.eep_timer;
 
 import android.Manifest;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
+import android.os.IBinder;
 import android.text.Editable;
 import android.text.InputFilter;
 import android.text.TextWatcher;
@@ -24,6 +27,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.button.MaterialButton;
@@ -35,7 +39,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import androidx.recyclerview.widget.ItemTouchHelper;
-import java.util.Collections;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -64,30 +67,58 @@ public class MainActivity extends AppCompatActivity {
     private TextView maxPresetsLabel;
     private boolean isApplyingPresetSelection = false;
 
-    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    // The countdown itself is fully owned by SleepTimerService (see its class doc). MainActivity
+    // only mirrors that state so the UI survives activity recreation (e.g. Light/Dark theme
+    // changes) without interrupting the running timer.
     private int uiRemaining = 0;
     private int uiDuration = 0;
     private boolean uiRunning = false;
 
-    private final Runnable uiTick = new Runnable() {
-        @Override
-        public void run() {
-            if (!uiRunning) return;
+    @Nullable
+    private SleepTimerService boundService;
+    private boolean isServiceBound = false;
 
-            uiRemaining--;
-            if (uiRemaining <= 0) {
-                countdownLabel.setText("00:00:00");
-                durationSummaryLabel.setText("0 min");
-                timerProgress.setProgressCompat(0, true);
-                timerDialOverlay.setProgressFraction(0f);
-                statusLabel.setText("Status: Completed");
-                setUiStopped();
-            } else {
-                countdownLabel.setText(formatTime(uiRemaining));
-                durationSummaryLabel.setText(formatDurationSummary(uiRemaining));
-                updateProgress();
-                uiHandler.postDelayed(this, 1000);
+    private final ServiceConnection serviceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            SleepTimerService.LocalBinder localBinder = (SleepTimerService.LocalBinder) service;
+            boundService = localBinder.getService();
+            isServiceBound = true;
+            boundService.setTimerCallback(timerCallback);
+
+            if (boundService.isTimerRunning()) {
+                uiDuration = boundService.getTotalDurationSeconds();
+                uiRemaining = boundService.getRemainingSeconds();
+                customTimerAdapter.setActiveTimerId(boundService.getActivePresetId());
+                syncUiToRunningState();
             }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            boundService = null;
+            isServiceBound = false;
+        }
+    };
+
+    private final SleepTimerService.TimerCallback timerCallback = new SleepTimerService.TimerCallback() {
+        @Override
+        public void onTick(int remainingSeconds, int totalDurationSeconds) {
+            uiRemaining = remainingSeconds;
+            uiDuration = totalDurationSeconds;
+            countdownLabel.setText(formatTime(uiRemaining));
+            durationSummaryLabel.setText(formatDurationSummary(uiRemaining));
+            updateProgress();
+        }
+
+        @Override
+        public void onCompleted() {
+            countdownLabel.setText("00:00:00");
+            durationSummaryLabel.setText("0 min");
+            timerProgress.setProgressCompat(0, true);
+            timerDialOverlay.setProgressFraction(0f);
+            statusLabel.setText("Status: Completed");
+            setUiStopped();
         }
     };
 
@@ -127,9 +158,33 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        uiHandler.removeCallbacks(uiTick);
+    protected void onStart() {
+        super.onStart();
+        bindToService();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        unbindFromService();
+    }
+
+    private void bindToService() {
+        if (isServiceBound) return;
+        Intent intent = new Intent(this, SleepTimerService.class);
+        // Flags = 0: only attach if the service is already running (started elsewhere); never
+        // create a fresh idle instance just because the Activity happened to bind.
+        isServiceBound = bindService(intent, serviceConnection, 0);
+    }
+
+    private void unbindFromService() {
+        if (!isServiceBound) return;
+        if (boundService != null) {
+            boundService.setTimerCallback(null);
+        }
+        unbindService(serviceConnection);
+        isServiceBound = false;
+        boundService = null;
     }
 
     private void setupInputs() {
@@ -207,15 +262,39 @@ public class MainActivity extends AppCompatActivity {
         Intent intent = new Intent(this, SleepTimerService.class);
         intent.putExtra("duration_seconds", durationSeconds);
         startForegroundService(intent);
+        bindToService();
 
-        uiRemaining = durationSeconds;
         uiDuration = durationSeconds;
-        uiRunning = true;
-        timerProgress.setMax(PROGRESS_MAX);
-        timerProgress.setProgressCompat(PROGRESS_MAX, false);
-        timerDialOverlay.setProgressFraction(1f);
-        uiHandler.postDelayed(uiTick, 1000);
+        uiRemaining = durationSeconds;
+        syncUiToRunningState();
+    }
 
+    private void startTimer(CustomTimer timer) {
+        int durationSeconds = (timer.hours * 3600) + (timer.minutes * 60);
+        customTimerAdapter.setActiveTimerId(timer.id);
+
+        Intent intent = new Intent(this, SleepTimerService.class);
+        intent.putExtra("duration_seconds", durationSeconds);
+        intent.putExtra("preset_id", timer.id);
+        startForegroundService(intent);
+        bindToService();
+
+        uiDuration = durationSeconds;
+        uiRemaining = durationSeconds;
+        syncUiToRunningState();
+    }
+
+    /** Applies every UI change associated with "a timer is currently running", whether the
+     *  timer was just started by this Activity or discovered on (re)binding to the service. */
+    private void syncUiToRunningState() {
+        uiRunning = true;
+
+        timerToggle.setOnCheckedChangeListener(null);
+        timerToggle.setChecked(true);
+        setupToggle();
+
+        timerProgress.setMax(PROGRESS_MAX);
+        updateProgress();
         countdownLabel.setText(formatTime(uiRemaining));
         durationSummaryLabel.setText(formatDurationSummary(uiRemaining));
         statusLabel.setText("Status: Relaxing...");
@@ -227,12 +306,6 @@ public class MainActivity extends AppCompatActivity {
         updateAddButtonState();
     }
 
-    private void startTimer(CustomTimer timer) {
-        int durationSeconds = (timer.hours * 3600) + (timer.minutes * 60);
-        customTimerAdapter.setActiveTimerId(timer.id);
-        startTimer(durationSeconds);
-    }
-
     private void cancelTimer() {
         Intent intent = new Intent(this, SleepTimerService.class);
         intent.setAction("STOP");
@@ -241,7 +314,6 @@ public class MainActivity extends AppCompatActivity {
         customTimerAdapter.setActiveTimerId(null);
 
         uiRunning = false;
-        uiHandler.removeCallbacks(uiTick);
         setUiStopped();
         statusLabel.setText("Status: Ready");
         customTimerAdapter.setInteractionEnabled(true);
@@ -293,22 +365,28 @@ public class MainActivity extends AppCompatActivity {
         hourInputLayout.setError(null);
         minuteInputLayout.setError(null);
 
-        Integer hours = parseInput(hourPicker);
-        Integer minutes = parseInput(minutePicker);
+        Integer hoursRaw = parseInput(hourPicker);
+        Integer minutesRaw = parseInput(minutePicker);
         boolean valid = true;
 
-        if (hours == null || hours < 0 || hours > 23) {
+        if (hoursRaw != null && (hoursRaw < 0 || hoursRaw > 23)) {
             valid = false;
             if (showErrors) hourInputLayout.setError("0-23");
         }
 
-        if (minutes == null || minutes < 0 || minutes > 59) {
+        if (minutesRaw != null && (minutesRaw < 0 || minutesRaw > 59)) {
             valid = false;
             if (showErrors) minuteInputLayout.setError("0-59");
         }
 
         if (!valid) return 0;
-        return hours * 3600 + minutes * 60;
+
+        int hours = hoursRaw == null ? 0 : hoursRaw;
+        int minutes = minutesRaw == null ? 0 : minutesRaw;
+        int total = hours * 3600 + minutes * 60;
+
+        if (total <= 0) return 0;
+        return total;
     }
 
     private Integer parseInput(EditText input) {
@@ -441,24 +519,54 @@ public class MainActivity extends AppCompatActivity {
 
                 if (actionState == ItemTouchHelper.ACTION_STATE_SWIPE) {
                     View itemView = viewHolder.itemView;
+                    float density = getResources().getDisplayMetrics().density;
+                    float cornerRadius = 16 * density;
+                    int iconSize = (int) (28 * density);
+                    int iconMargin = (int) (22 * density);
+
                     Paint paint = new Paint();
                     paint.setAntiAlias(true);
 
-                    float cornerRadius = 16 * getResources().getDisplayMetrics().density;
-
                     if (dX > 0) {
-
-                        paint.setColor(android.graphics.Color.parseColor("#EF5350"));
+                        // Right swipe = destructive delete action.
+                        paint.setColor(Color.parseColor("#EF5350"));
                         RectF bgRect = new RectF(itemView.getLeft(), itemView.getTop(), itemView.getLeft() + dX, itemView.getBottom());
                         c.drawRoundRect(bgRect, cornerRadius, cornerRadius, paint);
 
+                        if (dX > iconSize) {
+                            Drawable icon = ContextCompat.getDrawable(MainActivity.this, R.drawable.ic_delete);
+                            if (icon != null) {
+                                icon.mutate();
+                                icon.setTint(Color.WHITE);
+                                int top = itemView.getTop() + (itemView.getHeight() - iconSize) / 2;
+                                int left = itemView.getLeft() + iconMargin;
+                                icon.setBounds(left, top, left + iconSize, top + iconSize);
+                                icon.draw(c);
+                            }
+                        }
 
                     } else if (dX < 0) {
+                        // Left swipe = toggle favourite; icon reflects the item's current state.
+                        int position = viewHolder.getBindingAdapterPosition();
+                        boolean isFavourite = position != RecyclerView.NO_POSITION
+                                && customTimerAdapter.getItems().get(position).isFavourite;
 
-                        paint.setColor(android.graphics.Color.parseColor("#ff9eb5"));
+                        paint.setColor(Color.parseColor("#ff9eb5"));
                         RectF bgRect = new RectF(itemView.getRight() + dX, itemView.getTop(), itemView.getRight(), itemView.getBottom());
                         c.drawRoundRect(bgRect, cornerRadius, cornerRadius, paint);
 
+                        if (-dX > iconSize) {
+                            Drawable icon = ContextCompat.getDrawable(MainActivity.this,
+                                    isFavourite ? R.drawable.ic_heart_filled : R.drawable.ic_heart_outline);
+                            if (icon != null) {
+                                icon.mutate();
+                                icon.setTint(isFavourite ? Color.parseColor("#E91E63") : Color.WHITE);
+                                int top = itemView.getTop() + (itemView.getHeight() - iconSize) / 2;
+                                int right = itemView.getRight() - iconMargin;
+                                icon.setBounds(right - iconSize, top, right, top + iconSize);
+                                icon.draw(c);
+                            }
+                        }
                     }
                 }
 
@@ -515,6 +623,7 @@ public class MainActivity extends AppCompatActivity {
             customTimersRecycler.scrollToPosition(0);
         }
     };
+
 
     private void selectPreset(CustomTimer timer) {
         isApplyingPresetSelection = true;
