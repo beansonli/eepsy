@@ -48,7 +48,7 @@ Since eepsy is open-source and distributed directly through GitHub, you won't fi
 ## 💬 Feedback & Help
 I built this for better sleep, and I hope it helps you too. If you find any bugs, have feature requests, or just want to say thanks, I’d love to hear from you! :D
 
-👉 **[Click here to submit your feedback or feature requests](https://forms.gle/Mzx19jWPJPJRsyrK9](https://docs.google.com/forms/d/e/1FAIpQLScUosS-Qtr5WEB0Ivv-xplxPioIYCBvn9l01kh5U9uwvfp30A/viewform?usp=dialog))**
+👉 **[Click here to submit your feedback or feature requests](https://docs.google.com/forms/d/e/1FAIpQLScUosS-Qtr5WEB0Ivv-xplxPioIYCBvn9l01kh5U9uwvfp30A/viewform?usp=dialog)**
 
 ⭐ **Love Eepsy?** Please give this repo a **Star**! It helps others find the app and keeps me motivated to keep improving it.
 
