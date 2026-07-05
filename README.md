@@ -9,7 +9,6 @@
   <img src="https://github.com/beansonli/eepsy/blob/main/eepsy_app_view1.png?raw=true" width="200" />
   <img src="https://github.com/beansonli/eepsy/blob/main/eepsy_app_view2.jpeg?raw=true" width="200" />
 </p>
----
 
 ## 📖 Table of Contents
 1. [About the App](#about)
